@@ -175,14 +175,17 @@ fragment float4 quad_fragment(QuadFragmentInput input [[stage_in]],
     }
   }
 
-  if (distance < 0.) {
-    if (border_width > 0. && distance > -border_width) {
-      return input.border_color;
+  if (distance < 0.0) {
+    if (border_width > 0.0 && distance > -border_width) {
+        float border_blend = saturate(0.5 - (distance + border_width));
+        float4 blended_border = over(color, input.border_color);
+        return mix(input.border_color, blended_border, border_blend);
     } else {
-      return color;
+        return color;
     }
   } else {
-    return float4(0.);
+    float alpha = saturate(0.5 - distance);
+    return float4(color.rgb, color.a * alpha);
   }
 }
 

@@ -501,12 +501,15 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
 
     if (distance < 0.0) {
         if (border_width > 0.0 && distance > -border_width) {
-            return blend_color(input.border_color, 1.0);
+            let border_blend = saturate(0.5 - (distance + border_width));
+            let blended_border = over(background_color, input.border_color);
+            return blend_color(mix(input.border_color, blended_border, border_blend), 1.0);
         } else {
             return blend_color(background_color, 1.0);
         }
     } else {
-        return vec4<f32>(0.0);
+        let alpha = saturate(0.5 - distance);
+        return blend_color(background_color, alpha);
     }
 }
 
