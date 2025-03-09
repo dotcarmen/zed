@@ -1,18 +1,18 @@
 use crate::{
     point, prelude::*, px, size, transparent_black, Action, AnyDrag, AnyElement, AnyTooltip,
-    AnyView, App, AppContext, Arena, Asset, AsyncWindowContext, AvailableSpace, Background, Bounds,
-    BoxShadow, Context, Corners, CursorStyle, Decorations, DevicePixels, DispatchActionListener,
-    DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, Entity, EntityId, EventEmitter,
-    FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs, Hsla, InputHandler, IsZero,
-    KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke, KeystrokeEvent, LayoutId,
-    LineLayoutIndex, Modifiers, ModifiersChangedEvent, MonochromeSprite, MouseButton, MouseEvent,
-    MouseMoveEvent, MouseUpEvent, Path, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput,
-    PlatformInputHandler, PlatformWindow, Point, PolychromeSprite, PromptLevel, Quad, Render,
-    RenderGlyphParams, RenderImage, RenderImageParams, RenderSvgParams, Replay, ResizeEdge,
-    ScaledPixels, Scene, Shadow, SharedString, Size, StrikethroughStyle, Style, SubscriberSet,
-    Subscription, TaffyLayoutEngine, Task, TextStyle, TextStyleRefinement, TransformationMatrix,
-    Underline, UnderlineStyle, WindowAppearance, WindowBackgroundAppearance, WindowBounds,
-    WindowControls, WindowDecorations, WindowOptions, WindowParams, WindowTextSystem,
+    AnyView, App, AppContext, Arena, Asset, AsyncWindowContext, AvailableSpace, Background,
+    BorderStyle, Bounds, BoxShadow, Context, Corners, CursorStyle, Decorations, DevicePixels,
+    DispatchActionListener, DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, Entity,
+    EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs,
+    Hsla, InputHandler, IsZero, KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke,
+    KeystrokeEvent, LayoutId, LineLayoutIndex, Modifiers, ModifiersChangedEvent, MonochromeSprite,
+    MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, Path, Pixels, PlatformAtlas,
+    PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point, PolychromeSprite,
+    PromptLevel, Quad, Render, RenderGlyphParams, RenderImage, RenderImageParams, RenderSvgParams,
+    Replay, ResizeEdge, ScaledPixels, Scene, Shadow, SharedString, Size, StrikethroughStyle, Style,
+    SubscriberSet, Subscription, TaffyLayoutEngine, Task, TextStyle, TextStyleRefinement,
+    TransformationMatrix, Underline, UnderlineStyle, WindowAppearance, WindowBackgroundAppearance,
+    WindowBounds, WindowControls, WindowDecorations, WindowOptions, WindowParams, WindowTextSystem,
     SMOOTH_SVG_SCALE_FACTOR, SUBPIXEL_VARIANTS,
 };
 use anyhow::{anyhow, Context as _, Result};
@@ -2330,6 +2330,14 @@ impl Window {
         let scale_factor = self.scale_factor();
         let content_mask = self.content_mask();
         let opacity = self.element_opacity();
+
+        let border_style_bits = Edges {
+            top: quad.border_style.top.into(),
+            right: quad.border_style.right.into(),
+            bottom: quad.border_style.bottom.into(),
+            left: quad.border_style.left.into(),
+        };
+
         self.next_frame.scene.insert_primitive(Quad {
             order: 0,
             pad: 0,
@@ -2339,6 +2347,7 @@ impl Window {
             border_color: quad.border_color.opacity(opacity),
             corner_radii: quad.corner_radii.scale(scale_factor),
             border_widths: quad.border_widths.scale(scale_factor),
+            border_style: border_style_bits,
         });
     }
 
@@ -4104,6 +4113,8 @@ pub struct PaintQuad {
     pub border_widths: Edges<Pixels>,
     /// The color of the quad's borders.
     pub border_color: Hsla,
+    /// The style of the quad's borders.
+    pub border_style: Edges<BorderStyle>,
 }
 
 impl PaintQuad {
@@ -4138,6 +4149,14 @@ impl PaintQuad {
             ..self
         }
     }
+
+    /// Sets the border style of the quad.
+    pub fn border_style(self, border_style: impl Into<Edges<BorderStyle>>) -> Self {
+        PaintQuad {
+            border_style: border_style.into(),
+            ..self
+        }
+    }
 }
 
 /// Creates a quad with the given parameters.
@@ -4154,6 +4173,7 @@ pub fn quad(
         background: background.into(),
         border_widths: border_widths.into(),
         border_color: border_color.into(),
+        border_style: Edges::all(BorderStyle::Solid),
     }
 }
 
@@ -4165,6 +4185,7 @@ pub fn fill(bounds: impl Into<Bounds<Pixels>>, background: impl Into<Background>
         background: background.into(),
         border_widths: (0.).into(),
         border_color: transparent_black(),
+        border_style: Edges::all(BorderStyle::Solid),
     }
 }
 
@@ -4176,5 +4197,6 @@ pub fn outline(bounds: impl Into<Bounds<Pixels>>, border_color: impl Into<Hsla>)
         background: transparent_black().into(),
         border_widths: (1.).into(),
         border_color: border_color.into(),
+        border_style: Edges::all(BorderStyle::Solid),
     }
 }

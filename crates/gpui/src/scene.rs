@@ -2,8 +2,8 @@
 #![cfg_attr(windows, allow(dead_code))]
 
 use crate::{
-    bounds_tree::BoundsTree, point, AtlasTextureId, AtlasTile, Background, Bounds, ContentMask,
-    Corners, Edges, Hsla, Pixels, Point, Radians, ScaledPixels, Size,
+    bounds_tree::BoundsTree, point, AtlasTextureId, AtlasTile, Background, BorderStyle, Bounds,
+    ContentMask, Corners, Edges, Hsla, Pixels, Point, Radians, ScaledPixels, Size,
 };
 use std::{fmt::Debug, iter::Peekable, ops::Range, slice};
 
@@ -462,6 +462,21 @@ pub(crate) struct Quad {
     pub border_color: Hsla,
     pub corner_radii: Corners<ScaledPixels>,
     pub border_widths: Edges<ScaledPixels>,
+    pub border_style: Edges<BorderStyleBits>,
+}
+
+/// Bit representation, for shader compatibility, of `BorderStyle`
+#[derive(Default, Debug, Clone, Copy)]
+#[repr(C)]
+pub(crate) struct BorderStyleBits(pub u32);
+
+impl From<BorderStyle> for BorderStyleBits {
+    fn from(style: BorderStyle) -> Self {
+        match style {
+            BorderStyle::Solid => BorderStyleBits(0),
+            BorderStyle::Dashed => BorderStyleBits(1),
+        }
+    }
 }
 
 impl From<Quad> for Primitive {

@@ -380,6 +380,92 @@ pub fn border_style_methods(input: TokenStream) -> TokenStream {
     output.into()
 }
 
+pub fn border_style_type_methods(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as StyleableMacroInput);
+    let visibility = input.method_visibility;
+
+    let methods = vec![
+        quote! {
+            /// Sets the border style to solid.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_solid(mut self) -> Self {
+                self.style().border_style.top = Some(gpui::BorderStyle::Solid);
+                self.style().border_style.right = Some(gpui::BorderStyle::Solid);
+                self.style().border_style.bottom = Some(gpui::BorderStyle::Solid);
+                self.style().border_style.left = Some(gpui::BorderStyle::Solid);
+                self
+            }
+        },
+        quote! {
+            /// Sets the border style to dashed.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_dashed(mut self) -> Self {
+                self.style().border_style.top = Some(gpui::BorderStyle::Dashed);
+                self.style().border_style.right = Some(gpui::BorderStyle::Dashed);
+                self.style().border_style.bottom = Some(gpui::BorderStyle::Dashed);
+                self.style().border_style.left = Some(gpui::BorderStyle::Dashed);
+                self
+            }
+        },
+        quote! {
+            /// Sets the top border style to dashed.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_t_dashed(mut self) -> Self {
+                self.style().border_style.top = Some(gpui::BorderStyle::Dashed);
+                self
+            }
+        },
+        quote! {
+            /// Sets the right border style to dashed.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_r_dashed(mut self) -> Self {
+                self.style().border_style.right = Some(gpui::BorderStyle::Dashed);
+                self
+            }
+        },
+        quote! {
+            /// Sets the bottom border style to dashed.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_b_dashed(mut self) -> Self {
+                self.style().border_style.bottom = Some(gpui::BorderStyle::Dashed);
+                self
+            }
+        },
+        quote! {
+            /// Sets the left border style to dashed.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_l_dashed(mut self) -> Self {
+                self.style().border_style.left = Some(gpui::BorderStyle::Dashed);
+                self
+            }
+        },
+        quote! {
+            /// Sets the horizontal border style to dashed.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_x_dashed(mut self) -> Self {
+                self.style().border_style.left = Some(gpui::BorderStyle::Dashed);
+                self.style().border_style.right = Some(gpui::BorderStyle::Dashed);
+                self
+            }
+        },
+        quote! {
+            /// Sets the vertical border style to dashed.
+            /// [Docs](https://developer.mozilla.org/en-US/docs/Web/CSS/border-style)
+            #visibility fn border_y_dashed(mut self) -> Self {
+                self.style().border_style.top = Some(gpui::BorderStyle::Dashed);
+                self.style().border_style.bottom = Some(gpui::BorderStyle::Dashed);
+                self
+            }
+        },
+    ];
+
+    let output = quote! {
+        #(#methods)*
+    };
+
+    output.into()
+}
+
 pub fn box_shadow_style_methods(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as StyleableMacroInput);
     let visibility = input.method_visibility;

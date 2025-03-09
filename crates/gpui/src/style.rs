@@ -213,6 +213,10 @@ pub struct Style {
     #[refineable]
     pub border_widths: Edges<AbsoluteLength>,
 
+    /// The style of the border (solid or dashed)
+    #[refineable]
+    pub border_style: Edges<BorderStyle>,
+
     // Alignment properties
     /// How this node's children aligned in the cross/block axis?
     pub align_items: Option<AlignItems>,
@@ -283,6 +287,16 @@ pub enum Visibility {
     Visible,
     /// The element should not be drawn, but should still take up space in the layout.
     Hidden,
+}
+
+/// The style of the border.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum BorderStyle {
+    /// A solid border
+    #[default]
+    Solid,
+    /// A dashed border
+    Dashed,
 }
 
 /// The possible values of the box-shadow property
@@ -628,13 +642,15 @@ impl Style {
                 None => Hsla::default(),
             };
             border_color.a = 0.;
-            window.paint_quad(quad(
+            let quad = quad(
                 bounds,
                 self.corner_radii.to_pixels(bounds.size, rem_size),
                 background_color.unwrap_or_default(),
                 Edges::default(),
                 border_color,
-            ));
+            )
+            .border_style(self.border_style);
+            window.paint_quad(quad);
         }
 
         continuation(window, cx);
@@ -670,7 +686,8 @@ impl Style {
                 background,
                 border_widths,
                 self.border_color.unwrap_or_default(),
-            );
+            )
+            .border_style(self.border_style);
 
             window.with_content_mask(Some(ContentMask { bounds: top_bounds }), |window| {
                 window.paint_quad(quad.clone());
@@ -731,6 +748,12 @@ impl Default for Style {
             margin: Edges::<Length>::zero(),
             padding: Edges::<DefiniteLength>::zero(),
             border_widths: Edges::<AbsoluteLength>::zero(),
+            border_style: Edges {
+                top: BorderStyle::Solid,
+                right: BorderStyle::Solid,
+                bottom: BorderStyle::Solid,
+                left: BorderStyle::Solid,
+            },
             size: Size::auto(),
             min_size: Size::auto(),
             max_size: Size::auto(),

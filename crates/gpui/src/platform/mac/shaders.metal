@@ -138,24 +138,52 @@ fragment float4 quad_fragment(QuadFragmentInput input [[stage_in]],
       half_size - corner_radius - float2(vertical_border, horizontal_border);
   float2 point_to_inset_corner = fabs(center_to_point) - inset_size;
   float border_width;
+
   if (point_to_inset_corner.x < 0. && point_to_inset_corner.y < 0.) {
     border_width = 0.;
-  } else if (point_to_inset_corner.y > point_to_inset_corner.x) {
-    border_width = horizontal_border;
-  } else {
+  } else if (point_to_inset_corner.x > point_to_inset_corner.y) {
     border_width = vertical_border;
+
+    uint border_style_value = center_to_point.x <= 0. ? quad.border_style.left._0 : quad.border_style.right._0;
+
+    if (border_style_value == 1) { // `border_style_value == 1` equals dashed
+      float pos = center_to_point.y + half_size.y;
+      float dash_length = vertical_border * 3.0;
+      float gap_length = vertical_border * 3.0;
+      float dash_period = dash_length + gap_length;
+      float dash_pos = fmod(pos, dash_period);
+
+      if (dash_pos > dash_length) {
+        border_width = 0.;
+      }
+    }
+  } else {
+    border_width = horizontal_border;
+
+    uint border_style_value = center_to_point.y <= 0. ? quad.border_style.top._0 : quad.border_style.bottom._0;
+
+    if (border_style_value == 1) {
+      float pos = center_to_point.x + half_size.x;
+      float dash_length = horizontal_border * 3.0;
+      float gap_length = horizontal_border * 3.0;
+      float dash_period = dash_length + gap_length;
+      float dash_pos = fmod(pos, dash_period);
+
+      if (dash_pos > dash_length) {
+        border_width = 0.;
+      }
+    }
   }
 
-  if (border_width != 0.) {
-    float inset_distance = distance + border_width;
-    // Blend the border on top of the background and then linearly interpolate
-    // between the two as we slide inside the background.
-    float4 blended_border = over(color, input.border_color);
-    color = mix(blended_border, color,
-                saturate(0.5 - inset_distance));
+  if (distance < 0.) {
+    if (border_width > 0. && distance > -border_width) {
+      return input.border_color;
+    } else {
+      return color;
+    }
+  } else {
+    return float4(0.);
   }
-
-  return color * float4(1., 1., 1., saturate(0.5 - distance));
 }
 
 struct ShadowVertexOutput {

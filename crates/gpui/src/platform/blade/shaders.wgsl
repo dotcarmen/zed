@@ -390,6 +390,7 @@ struct Quad {
     border_color: Hsla,
     corner_radii: Corners,
     border_widths: Edges,
+    border_style: Edges_u32,
 }
 var<storage, read> b_quads: array<Quad>;
 
@@ -466,23 +467,47 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     var border_width = 0.0;
     if (point_to_inset_corner.x < 0.0 && point_to_inset_corner.y < 0.0) {
         border_width = 0.0;
-    } else if (point_to_inset_corner.y > point_to_inset_corner.x) {
-        border_width = horizontal_border;
-    } else {
+    } else if (point_to_inset_corner.x > point_to_inset_corner.y) {
         border_width = vertical_border;
+        let border_style = select(quad.border_style.left, quad.border_style.right, center_to_point.x > 0.0);
+
+        if (border_style == 1u) { // `border_style_value == 1` equals dashed
+            let pos = center_to_point.y + half_size.y;
+            let dash_length = vertical_border * 3.0;
+            let gap_length = vertical_border * 3.0;
+            let dash_period = dash_length + gap_length;
+            let dash_pos = pos % dash_period;
+
+            if (dash_pos > dash_length) {
+                border_width = 0.0;
+            }
+        }
+    } else {
+        border_width = horizontal_border;
+        let border_style = select(quad.border_style.top, quad.border_style.bottom, center_to_point.y > 0.0);
+
+        if (border_style == 1u) {
+            let pos = center_to_point.x + half_size.x;
+            let dash_length = horizontal_border * 3.0;
+            let gap_length = horizontal_border * 3.0;
+            let dash_period = dash_length + gap_length;
+            let dash_pos = pos % dash_period;
+
+            if (dash_pos > dash_length) {
+                border_width = 0.0;
+            }
+        }
     }
 
-    var color = background_color;
-    if (border_width > 0.0) {
-        let inset_distance = distance + border_width;
-        // Blend the border on top of the background and then linearly interpolate
-        // between the two as we slide inside the background.
-        let blended_border = over(background_color, input.border_color);
-        color = mix(blended_border, background_color,
-                    saturate(0.5 - inset_distance));
+    if (distance < 0.0) {
+        if (border_width > 0.0 && distance > -border_width) {
+            return blend_color(input.border_color, 1.0);
+        } else {
+            return blend_color(background_color, 1.0);
+        }
+    } else {
+        return vec4<f32>(0.0);
     }
-
-    return blend_color(color, saturate(0.5 - distance));
 }
 
 // --- shadows --- //
