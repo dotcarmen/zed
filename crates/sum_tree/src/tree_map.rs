@@ -37,6 +37,16 @@ pub struct TreeSet<K>(TreeMap<K, ()>)
 where
     K: Clone + Ord;
 
+impl<K, V> TreeMap<K, V>
+where
+    K: Clone + Ord,
+    V: Clone,
+{
+    pub fn clear(&mut self) {
+        self.0 = SumTree::default();
+    }
+}
+
 impl<K: Clone + Ord, V: Clone> TreeMap<K, V> {
     pub fn from_ordered_entries(entries: impl IntoIterator<Item = (K, V)>) -> Self {
         let tree = SumTree::from_iter(
@@ -68,10 +78,6 @@ impl<K: Clone + Ord, V: Clone> TreeMap<K, V> {
 
     pub fn insert(&mut self, key: K, value: V) {
         self.0.insert_or_replace(MapEntry { key, value }, &());
-    }
-
-    pub fn clear(&mut self) {
-        self.0 = SumTree::default();
     }
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
