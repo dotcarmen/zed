@@ -14,11 +14,10 @@ use futures::{
     future::{OptionFuture, Shared},
     FutureExt as _, StreamExt as _,
 };
-use git::repository::DiffType;
 use git::{
     repository::{
-        Branch, CommitDetails, GitRepository, PushOptions, Remote, RemoteCommandOutput, RepoPath,
-        ResetMode,
+        Branch, CommitDetails, DiffType, GitRepository, PushOptions, Remote, RemoteCommandOutput,
+        RepoPath, ResetMode,
     },
     status::FileStatus,
 };
