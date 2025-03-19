@@ -11,7 +11,7 @@ use collections::HashMap;
 use fs::Fs;
 use futures::{
     channel::{mpsc, oneshot},
-    future::{OptionFuture, Shared},
+    future::{self, OptionFuture, Shared},
     FutureExt as _, StreamExt as _,
 };
 use git::{
@@ -20,6 +20,7 @@ use git::{
         RepoPath, ResetMode,
     },
     status::FileStatus,
+    Oid,
 };
 use gpui::{
     App, AppContext, AsyncApp, Context, Entity, EventEmitter, SharedString, Subscription, Task,
@@ -114,6 +115,16 @@ enum GitStoreState {
         upstream_client: AnyProtoClient,
         project_id: ProjectId,
     },
+}
+
+#[derive(Clone)]
+pub struct GitStoreCheckpoint {
+    checkpoints_by_dot_git_abs_path: HashMap<PathBuf, RepositoryCheckpoint>,
+}
+
+#[derive(Copy, Clone)]
+pub struct RepositoryCheckpoint {
+    sha: Oid,
 }
 
 pub struct Repository {
@@ -350,7 +361,7 @@ impl GitStore {
                 let staged_text = self.state.load_staged_text(&buffer, &self.buffer_store, cx);
                 entry
                     .insert(
-                        cx.spawn(move |this, cx| async move {
+                        cx.spawn(async move |this, cx| {
                             Self::open_diff_internal(
                                 this,
                                 DiffKind::Unstaged,
@@ -405,7 +416,7 @@ impl GitStore {
 
                 entry
                     .insert(
-                        cx.spawn(move |this, cx| async move {
+                        cx.spawn(async move |this, cx| {
                             Self::open_diff_internal(
                                 this,
                                 DiffKind::Uncommitted,
@@ -430,11 +441,11 @@ impl GitStore {
         kind: DiffKind,
         texts: Result<DiffBasesChange>,
         buffer_entity: Entity<Buffer>,
-        mut cx: AsyncApp,
+        cx: &mut AsyncApp,
     ) -> Result<Entity<BufferDiff>> {
         let diff_bases_change = match texts {
             Err(e) => {
-                this.update(&mut cx, |this, cx| {
+                this.update(cx, |this, cx| {
                     let buffer = buffer_entity.read(cx);
                     let buffer_id = buffer.remote_id();
                     this.loading_diffs.remove(&(buffer_id, kind));
@@ -444,7 +455,7 @@ impl GitStore {
             Ok(change) => change,
         };
 
-        this.update(&mut cx, |this, cx| {
+        this.update(cx, |this, cx| {
             let buffer = buffer_entity.read(cx);
             let buffer_id = buffer.remote_id();
             let language = buffer.language().cloned();
@@ -503,6 +514,45 @@ impl GitStore {
     ) -> Option<Entity<BufferDiff>> {
         let diff_state = self.diffs.get(&buffer_id)?;
         diff_state.read(cx).uncommitted_diff.as_ref()?.upgrade()
+    }
+
+    pub fn checkpoint(&self, cx: &App) -> Task<Result<GitStoreCheckpoint>> {
+        let mut dot_git_abs_paths = Vec::new();
+        let mut checkpoints = Vec::new();
+        for repository in self.repositories.values() {
+            let repository = repository.read(cx);
+            dot_git_abs_paths.push(repository.dot_git_abs_path.clone());
+            checkpoints.push(repository.checkpoint().map(|checkpoint| checkpoint?));
+        }
+
+        cx.background_executor().spawn(async move {
+            let checkpoints: Vec<RepositoryCheckpoint> = future::try_join_all(checkpoints).await?;
+            Ok(GitStoreCheckpoint {
+                checkpoints_by_dot_git_abs_path: dot_git_abs_paths
+                    .into_iter()
+                    .zip(checkpoints)
+                    .collect(),
+            })
+        })
+    }
+
+    pub fn restore_checkpoint(&self, checkpoint: GitStoreCheckpoint, cx: &App) -> Task<Result<()>> {
+        let repositories_by_dot_git_abs_path = self
+            .repositories
+            .values()
+            .map(|repo| (repo.read(cx).dot_git_abs_path.clone(), repo))
+            .collect::<HashMap<_, _>>();
+
+        let mut tasks = Vec::new();
+        for (dot_git_abs_path, checkpoint) in checkpoint.checkpoints_by_dot_git_abs_path {
+            if let Some(repository) = repositories_by_dot_git_abs_path.get(&dot_git_abs_path) {
+                tasks.push(repository.read(cx).restore_checkpoint(checkpoint));
+            }
+        }
+        cx.background_spawn(async move {
+            future::try_join_all(tasks).await?;
+            Ok(())
+        })
     }
 
     fn downstream_client(&self) -> Option<(AnyProtoClient, ProjectId)> {
@@ -735,13 +785,13 @@ impl GitStore {
                     )
                 });
                 let diff = diff.downgrade();
-                cx.spawn(|this, mut cx| async move {
+                cx.spawn(async move |this, cx| {
                     if let Ok(Err(error)) = cx.background_spawn(recv).await {
-                        diff.update(&mut cx, |diff, cx| {
+                        diff.update(cx, |diff, cx| {
                             diff.clear_pending_hunks(cx);
                         })
                         .ok();
-                        this.update(&mut cx, |_, cx| cx.emit(GitEvent::IndexWriteError(error)))
+                        this.update(cx, |_, cx| cx.emit(GitEvent::IndexWriteError(error)))
                             .ok();
                     }
                 })
@@ -971,7 +1021,7 @@ impl GitStore {
     fn spawn_git_worker(cx: &mut Context<GitStore>) -> mpsc::UnboundedSender<GitJob> {
         let (job_tx, mut job_rx) = mpsc::unbounded::<GitJob>();
 
-        cx.spawn(|_, mut cx| async move {
+        cx.spawn(async move |_, cx| {
             let mut jobs = VecDeque::new();
             loop {
                 while let Ok(Some(next_job)) = job_rx.try_next() {
@@ -987,7 +1037,7 @@ impl GitStore {
                             continue;
                         }
                     }
-                    (job.job)(&mut cx).await;
+                    (job.job)(cx).await;
                 } else if let Some(job) = job_rx.next().await {
                     jobs.push_back(job);
                 } else {
@@ -1770,7 +1820,7 @@ impl BufferDiffState {
             (None, None) => true,
             _ => false,
         };
-        self.recalculate_diff_task = Some(cx.spawn(|this, mut cx| async move {
+        self.recalculate_diff_task = Some(cx.spawn(async move |this, cx| {
             let mut new_unstaged_diff = None;
             if let Some(unstaged_diff) = &unstaged_diff {
                 new_unstaged_diff = Some(
@@ -1782,7 +1832,7 @@ impl BufferDiffState {
                         language_changed,
                         language.clone(),
                         language_registry.clone(),
-                        &mut cx,
+                        cx,
                     )
                     .await?,
                 );
@@ -1802,7 +1852,7 @@ impl BufferDiffState {
                             language_changed,
                             language.clone(),
                             language_registry.clone(),
-                            &mut cx,
+                            cx,
                         )
                         .await?,
                     )
@@ -1812,7 +1862,7 @@ impl BufferDiffState {
             let unstaged_changed_range = if let Some((unstaged_diff, new_unstaged_diff)) =
                 unstaged_diff.as_ref().zip(new_unstaged_diff.clone())
             {
-                unstaged_diff.update(&mut cx, |diff, cx| {
+                unstaged_diff.update(cx, |diff, cx| {
                     diff.set_snapshot(&buffer, new_unstaged_diff, language_changed, None, cx)
                 })?
             } else {
@@ -1822,7 +1872,7 @@ impl BufferDiffState {
             if let Some((uncommitted_diff, new_uncommitted_diff)) =
                 uncommitted_diff.as_ref().zip(new_uncommitted_diff.clone())
             {
-                uncommitted_diff.update(&mut cx, |uncommitted_diff, cx| {
+                uncommitted_diff.update(cx, |uncommitted_diff, cx| {
                     uncommitted_diff.set_snapshot(
                         &buffer,
                         new_uncommitted_diff,
@@ -1834,7 +1884,7 @@ impl BufferDiffState {
             }
 
             if let Some(this) = this.upgrade() {
-                this.update(&mut cx, |this, _| {
+                this.update(cx, |this, _| {
                     this.index_changed = false;
                     this.head_changed = false;
                     this.language_changed = false;
@@ -1871,7 +1921,7 @@ fn make_remote_delegate(
                 askpass_id,
                 prompt,
             });
-            cx.spawn(|_, _| async move {
+            cx.spawn(async move |_, _| {
                 tx.send(response.await?.response).ok();
                 anyhow::Ok(())
             })
@@ -2026,7 +2076,7 @@ impl Repository {
                 key,
                 job: Box::new(|cx: &mut AsyncApp| {
                     let job = job(git_repo, cx.clone());
-                    cx.spawn(|_| async move {
+                    cx.spawn(async move |_| {
                         let result = job.await;
                         result_tx.send(result).ok();
                     })
@@ -2148,7 +2198,7 @@ impl Repository {
         } = self.git_repo.clone()
         {
             let client = client.clone();
-            cx.spawn(|repository, mut cx| async move {
+            cx.spawn(async move |repository, cx| {
                 let request = client.request(proto::OpenCommitMessageBuffer {
                     project_id: project_id.0,
                     worktree_id: worktree_id.to_proto(),
@@ -2157,18 +2207,18 @@ impl Repository {
                 let response = request.await.context("requesting to open commit buffer")?;
                 let buffer_id = BufferId::new(response.buffer_id)?;
                 let buffer = buffer_store
-                    .update(&mut cx, |buffer_store, cx| {
+                    .update(cx, |buffer_store, cx| {
                         buffer_store.wait_for_remote_buffer(buffer_id, cx)
                     })?
                     .await?;
                 if let Some(language_registry) = languages {
                     let git_commit_language =
                         language_registry.language_for_name("Git Commit").await?;
-                    buffer.update(&mut cx, |buffer, cx| {
+                    buffer.update(cx, |buffer, cx| {
                         buffer.set_language(Some(git_commit_language), cx);
                     })?;
                 }
-                repository.update(&mut cx, |repository, _| {
+                repository.update(cx, |repository, _| {
                     repository.commit_message_buffer = Some(buffer.clone());
                 })?;
                 Ok(buffer)
@@ -2184,19 +2234,19 @@ impl Repository {
         buffer_store: Entity<BufferStore>,
         cx: &mut Context<Self>,
     ) -> Task<Result<Entity<Buffer>>> {
-        cx.spawn(|repository, mut cx| async move {
+        cx.spawn(async move |repository, cx| {
             let buffer = buffer_store
-                .update(&mut cx, |buffer_store, cx| buffer_store.create_buffer(cx))?
+                .update(cx, |buffer_store, cx| buffer_store.create_buffer(cx))?
                 .await?;
 
             if let Some(language_registry) = language_registry {
                 let git_commit_language = language_registry.language_for_name("Git Commit").await?;
-                buffer.update(&mut cx, |buffer, cx| {
+                buffer.update(cx, |buffer, cx| {
                     buffer.set_language(Some(git_commit_language), cx);
                 })?;
             }
 
-            repository.update(&mut cx, |repository, _| {
+            repository.update(cx, |repository, _| {
                 repository.commit_message_buffer = Some(buffer.clone());
             })?;
             Ok(buffer)
@@ -2345,13 +2395,13 @@ impl Repository {
             })
         }
 
-        cx.spawn(|this, mut cx| async move {
+        cx.spawn(async move |this, cx| {
             for save_future in save_futures {
                 save_future.await?;
             }
             let env = env.await;
 
-            this.update(&mut cx, |this, _| {
+            this.update(cx, |this, _| {
                 this.send_job(|git_repo, cx| async move {
                     match git_repo {
                         GitRepo::Local(repo) => repo.stage_paths(entries, env, cx).await,
@@ -2416,13 +2466,13 @@ impl Repository {
             })
         }
 
-        cx.spawn(move |this, mut cx| async move {
+        cx.spawn(async move |this, cx| {
             for save_future in save_futures {
                 save_future.await?;
             }
             let env = env.await;
 
-            this.update(&mut cx, |this, _| {
+            this.update(cx, |this, _| {
                 this.send_job(|git_repo, cx| async move {
                     match git_repo {
                         GitRepo::Local(repo) => repo.unstage_paths(entries, env, cx).await,
@@ -2917,6 +2967,32 @@ impl Repository {
 
                     Ok(branches)
                 }
+            }
+        })
+    }
+
+    pub fn checkpoint(&self) -> oneshot::Receiver<Result<RepositoryCheckpoint>> {
+        self.send_job(|repo, cx| async move {
+            match repo {
+                GitRepo::Local(git_repository) => {
+                    let sha = git_repository.checkpoint(cx).await?;
+                    Ok(RepositoryCheckpoint { sha })
+                }
+                GitRepo::Remote { .. } => Err(anyhow!("not implemented yet")),
+            }
+        })
+    }
+
+    pub fn restore_checkpoint(
+        &self,
+        checkpoint: RepositoryCheckpoint,
+    ) -> oneshot::Receiver<Result<()>> {
+        self.send_job(move |repo, cx| async move {
+            match repo {
+                GitRepo::Local(git_repository) => {
+                    git_repository.restore_checkpoint(checkpoint.sha, cx).await
+                }
+                GitRepo::Remote { .. } => Err(anyhow!("not implemented yet")),
             }
         })
     }
