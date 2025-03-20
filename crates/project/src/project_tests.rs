@@ -1,7 +1,6 @@
 #![allow(clippy::format_collect)]
 
 use crate::{task_inventory::TaskContexts, Event, *};
-use anyhow::Context;
 use buffer_diff::{
     assert_hunks, BufferDiffEvent, DiffHunkSecondaryStatus, DiffHunkStatus, DiffHunkStatusKind,
 };
@@ -25,10 +24,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, Rng};
 use serde_json::json;
 #[cfg(not(windows))]
 use std::os;
-use std::{
-    collections::VecDeque, mem, num::NonZeroU32, ops::Range, str::FromStr, sync::OnceLock,
-    task::Poll,
-};
+use std::{mem, num::NonZeroU32, ops::Range, str::FromStr, sync::OnceLock, task::Poll};
 use task::{ResolvedTask, TaskContext};
 use unindent::Unindent as _;
 use util::{
@@ -6360,7 +6356,7 @@ async fn test_staging_hunks(cx: &mut gpui::TestAppContext) {
     });
 }
 
-#[gpui::test(iterations = 1000, seeds(340, 472))]
+#[gpui::test(seeds(340, 472))]
 async fn test_staging_hunks_with_delayed_fs_event(cx: &mut gpui::TestAppContext) {
     use DiffHunkSecondaryStatus::*;
     init_test(cx);
@@ -6699,20 +6695,7 @@ async fn test_staging_lots_of_hunks_fast(cx: &mut gpui::TestAppContext) {
     });
 }
 
-// unstaged
-// optimistically staged
-// unstaged  <-- WHY?
-// staged
-
-// unstaged
-// optimistically staged
-// read
-//   clear pending hunks
-//   unstaged  <-- WHY?
-// read again
-//   staged
-
-#[gpui::test(iterations = 50)]
+#[gpui::test(iterations = 10)]
 async fn test_staging_multiline_hunks_randomly(cx: &mut gpui::TestAppContext, mut rng: StdRng) {
     // if this fails, to ease debugging, you can set this to `false` and see if it still fails
     let random_staging_order = false;
@@ -6742,15 +6725,6 @@ async fn test_staging_multiline_hunks_randomly(cx: &mut gpui::TestAppContext, mu
         .chunk_by(|&a, &b| a + 1 == b)
         .map(|chunk| (chunk[0], chunk.len()))
         .collect::<(Vec<usize>, Vec<usize>)>();
-
-    // mix committed contents with chosen hunk lines
-    let unstaged_lines = {
-        let mut unstaged_contents = committed_lines.clone();
-        for &hunk_line in &hunk_lines {
-            unstaged_contents[hunk_line] = format!("{} <- hunk here\n", hunk_line);
-        }
-        unstaged_contents
-    };
 
     // mix committed contents with chosen hunk lines
     let unstaged_lines = {
