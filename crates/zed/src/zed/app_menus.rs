@@ -209,7 +209,10 @@ pub fn app_menus() -> Vec<Menu> {
                 MenuItem::action("View Telemetry", zed_actions::OpenTelemetryLog),
                 MenuItem::action("View Dependency Licenses", zed_actions::OpenLicenses),
                 MenuItem::action("Show Welcome", workspace::Welcome),
-                MenuItem::action("Give Feedback...", zed_actions::feedback::GiveFeedback),
+                MenuItem::separator(),
+                MenuItem::action("Report Bug", feedback::FileBugReport),
+                MenuItem::action("Request Feature", feedback::RequestFeature),
+                MenuItem::action("Open Zed Repository", feedback::OpenZedRepo),
                 MenuItem::separator(),
                 MenuItem::action(
                     "Documentation",
@@ -229,6 +232,7 @@ pub fn app_menus() -> Vec<Menu> {
                         url: "https://zed.dev/jobs".into(),
                     },
                 ),
+                MenuItem::action("Email Us", feedback::EmailZed),
             ],
         },
     ]

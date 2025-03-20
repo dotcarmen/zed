@@ -3,8 +3,6 @@ use system_specs::SystemSpecs;
 use util::ResultExt;
 use workspace::Workspace;
 
-pub mod feedback_modal;
-
 mod system_specs;
 
 actions!(
@@ -38,11 +36,7 @@ fn file_bug_report_url(specs: &SystemSpecs) -> String {
 }
 
 pub fn init(cx: &mut App) {
-    cx.observe_new(|workspace: &mut Workspace, window, cx| {
-        let Some(window) = window else {
-            return;
-        };
-        feedback_modal::FeedbackModal::register(workspace, window, cx);
+    cx.observe_new(|workspace: &mut Workspace, _, _| {
         workspace
             .register_action(|_, _: &CopySystemSpecsIntoClipboard, window, cx| {
                 let specs = SystemSpecs::new(window, cx);
