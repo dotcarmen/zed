@@ -11,7 +11,7 @@ use collections::HashMap;
 use fs::Fs;
 use futures::{
     channel::{mpsc, oneshot},
-    future::{self, OptionFuture, Shared},
+    future::{self, join_all, OptionFuture, Shared},
     FutureExt as _, StreamExt as _,
 };
 use git::{
@@ -927,6 +927,7 @@ impl GitStore {
                         diff_bases_changes_by_buffer.push((buffer, diff_bases_change))
                     }
 
+                    let mut updates = Vec::new();
                     git_store
                         .update(&mut cx, |git_store, cx| {
                             for (buffer, diff_bases_change) in diff_bases_changes_by_buffer {
@@ -940,7 +941,7 @@ impl GitStore {
                                 };
 
                                 let downstream_client = git_store.downstream_client();
-                                diff_state.update(cx, |diff_state, cx| {
+                                let rx = diff_state.update(cx, |diff_state, cx| {
                                     use proto::update_diff_bases::Mode;
 
                                     let buffer = buffer.read(cx);
@@ -971,15 +972,19 @@ impl GitStore {
                                         client.send(message).log_err();
                                     }
 
-                                    let _ = diff_state.diff_bases_changed(
+                                    diff_state.diff_bases_changed(
                                         buffer.text_snapshot(),
                                         diff_bases_change,
                                         cx,
-                                    );
+                                    )
                                 });
+                                updates.push(rx);
                             }
                         })
                         .ok();
+
+                    // hold the git job queue while these are running
+                    join_all(updates).await;
                 },
             );
         }
